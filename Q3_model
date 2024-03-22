@@ -1,0 +1,1448 @@
+;;================================================================================
+;; Q3_model_batch - represents pheasants, hunters, tractors, and landscapes in agricultu-
+;; ral fields in Iowa
+;; This is the complete and final model.
+;; Edited to be used in batch jobs on UTK cluster.
+;; Author: Jasmine Kreig
+;; Created: 11-03-2019
+;; Last modified: 21-10-2020
+;;================================================================================
+
+globals [ day week year day-biomass day-corn
+  lek? nesting? incubate? birth? flock-by-sex?
+  hunt-radius? hunt-strip? base-harvest? theory-harvest?
+  hunt-base? hunt-ideal? time-h-base? time-h-ideal?
+  late-summer? late-fall? early-spring? late-spring? time-t-summer? time-t-fall? time-t-early? time-t-late?
+  field-dataset roosters-hunted total-biomass total-corn female-tractor-deaths male-tractor-deaths energy-death natural-death counter
+  corn-patches alfalfa-patches soybean-patches hay-patches swch-patches crp-patches grass-patches forest-patches
+  corn-food corn-cover corn-bio swch-food swch-cover swch-bio crp-food crp-cover crp-bio
+  alfalfa-food alfalfa-cover hay-food soybean-cover soybean-food grass-cover grass-food
+  ;land-prj land-shp output-file-name
+]
+
+patches-own [ owner patch-harem-num nest? field?
+  luse food cover biomass harvestable? been-mowed? been-visited? bird-visit]
+
+breed [ female-pheasants female-pheasant ]
+female-pheasants-own [ age energy food-trials
+  territorial? terr-size harem-num
+  est-nest? eggs nest-site nest-trials
+  mom death-prob
+  femaleflocks nearest-female ]
+
+breed [ male-pheasants male-pheasant ]
+male-pheasants-own [ age energy food-trials
+  desirability harem-radius lek-trials territorial? terr-size
+  mom death-prob
+  maleflocks nearest-male ]
+
+breed [ hunters hunter ]
+hunters-own [ roosters hunt-trials hunt-distance accuracy target ]
+
+breed [ tractors tractor ]
+tractors-own [ bio-yield corn-yield
+  femaleT-deaths maleT-deaths ]
+
+extensions [ gis profiler ]
+
+;;================================================================================
+;;====================================LOAD DATA===================================
+;;================================================================================
+
+
+;;==================================SET SCENARIOS===================================
+;to set-scenario
+;
+;  ;set names
+;  set land-prj "mixed_field.prj"
+;  set land-shp "mixed_field.shp"
+;  set output-file-name "simTemp1/mixed_"
+;
+;
+;  ;;SET SCENARIOS HERE!!! set any of these to true to use in scenario
+;  ;these are timings
+;  set hunt-base? false
+;  set hunt-ideal? false
+;  set late-summer? true
+;  set late-fall? false
+;  set early-spring? false
+;  set late-spring? false
+;  ;these are spatial
+;  set hunt-radius? false
+;  set hunt-strip? true
+;  set base-harvest? true
+;  set theory-harvest? false
+;
+;
+;end
+
+
+
+;;====================================LOAD LUSE===================================
+to load-data
+  ca
+  reset-ticks
+
+  ;;set the coordinate system
+  gis:load-coordinate-system "grass_dominated.prj"
+
+  ;; load the data
+  set field-dataset gis:load-dataset "grass_dominated.shp"
+
+  ;; Set the world envelope to the union of all dataset's envelopes
+  gis:set-world-envelope (gis:envelope-union-of (gis:envelope-of field-dataset))
+
+  ask patches [ set pcolor white ]
+  profiler:start
+end
+
+
+;;================================================================================
+;;===============================DISPLAY PROCEDURES===============================
+;;================================================================================
+
+;;==================================DISPLAY FIELD=================================
+to display-field
+  gis:set-drawing-color black
+  gis:draw field-dataset 1
+
+  foreach gis:feature-list-of field-dataset
+  [ veg-type ->
+    if gis:property-value veg-type "luse" = "corn" [
+      gis:set-drawing-color 45
+      gis:fill veg-type 2.0
+    ]
+
+    if gis:property-value veg-type "luse" = "soybean" [
+      gis:set-drawing-color 37
+      gis:fill veg-type 2.0
+    ]
+
+    if gis:property-value veg-type "luse" = "alfalfa" [
+      gis:set-drawing-color 56
+      gis:fill veg-type 2.0
+    ]
+
+    if gis:property-value veg-type "luse" = "drybea" [
+      gis:set-drawing-color 13
+      gis:fill veg-type 2.0
+    ]
+
+    if gis:property-value veg-type "luse" = "hay" [
+      gis:set-drawing-color 27
+      gis:fill veg-type 2.0
+    ]
+
+    if gis:property-value veg-type "luse" = "oats" [
+      gis:set-drawing-color 38
+      gis:fill veg-type 2.0
+    ]
+
+    if gis:property-value veg-type "luse" = "barren" [
+      gis:set-drawing-color 133
+      gis:fill veg-type 2.0
+    ]
+
+    if gis:property-value veg-type "luse" = "forest" [
+      gis:set-drawing-color 54
+      gis:fill veg-type 2.0
+    ]
+
+    if gis:property-value veg-type "luse" = "developed" [
+      gis:set-drawing-color 111
+      gis:fill veg-type 2.0
+    ]
+
+    if gis:property-value veg-type "luse" = "dev/lw" [
+      gis:set-drawing-color 111
+      gis:fill veg-type 2.0
+    ]
+
+    if gis:property-value veg-type "luse" = "dev/op" [
+      gis:set-drawing-color 111
+      gis:fill veg-type 2.0
+    ]
+
+    if gis:property-value veg-type "luse" = "grassland" [
+      gis:set-drawing-color 24
+      gis:fill veg-type 2.0
+    ]
+
+    if gis:property-value veg-type "luse" = "herb wetland" [
+      gis:set-drawing-color 74
+      gis:fill veg-type 2.0
+    ]
+
+    if gis:property-value veg-type "luse" = "herb wet" [
+      gis:set-drawing-color 74
+      gis:fill veg-type 2.0
+    ]
+
+    if gis:property-value veg-type "luse" = "water" [
+      gis:set-drawing-color 105
+      gis:fill veg-type 2.0
+    ]
+
+    if gis:property-value veg-type "luse" = "woody wetlan" [
+      gis:set-drawing-color 73
+      gis:fill veg-type 2.0
+    ]
+
+    if gis:property-value veg-type "luse" = "woody wet" [
+      gis:set-drawing-color 73
+      gis:fill veg-type 2.0
+    ]
+
+    if gis:property-value veg-type "luse" = "shrub" [
+      gis:set-drawing-color 36
+      gis:fill veg-type 2.0
+    ]
+
+    if gis:property-value veg-type "luse" = "shrubland" [
+      gis:set-drawing-color 36
+      gis:fill veg-type 2.0
+    ]
+
+    if gis:property-value veg-type "luse" = "sod" [
+      gis:set-drawing-color 102
+      gis:fill veg-type 2.0
+    ]
+
+    if gis:property-value veg-type "luse" = "crp food plo" [
+      gis:set-drawing-color 116
+      gis:fill veg-type 2.0
+    ]
+
+   if gis:property-value veg-type "luse" = "crp food plot" [
+      gis:set-drawing-color 116
+      gis:fill veg-type 2.0
+    ]
+
+    if gis:property-value veg-type "luse" = "crp switchgrass" [
+      gis:set-drawing-color 136
+      gis:fill veg-type 2.0
+    ]
+
+    if gis:property-value veg-type "luse" = "CRP switchgrass" [
+      gis:set-drawing-color 136
+      gis:fill veg-type 2.0
+    ]
+
+    if gis:property-value veg-type "luse" = "nestcv" [
+      gis:set-drawing-color 125
+      gis:fill veg-type 2.0
+    ]
+
+    if gis:property-value veg-type "luse" = "wntrtree" [
+      gis:set-drawing-color 135
+      gis:fill veg-type 2.0
+    ]
+
+    if gis:property-value veg-type "luse" = "crp" [
+      gis:set-drawing-color 85
+      gis:fill veg-type 2.0
+    ]
+  ]
+end
+
+;;=================================LOAD-PATCH-DATA================================
+to load-patch-data
+  set corn-food []
+  file-open "corn_food.txt"
+  while [ not file-at-end? ]
+  [ set corn-food sentence corn-food (list file-read) ]
+  file-close
+
+  set corn-cover []
+  file-open "corn_cover.txt"
+  while [ not file-at-end? ]
+  [ set corn-cover sentence corn-cover (list file-read) ]
+  file-close
+
+  set corn-bio []
+  file-open "corn_bio.txt"
+  while [ not file-at-end? ]
+  [ set corn-bio sentence corn-bio (list file-read) ]
+  file-close
+
+  set alfalfa-cover []
+  file-open "alfalfa_cover.txt"
+  while [ not file-at-end? ]
+  [ set alfalfa-cover sentence alfalfa-cover (list file-read) ]
+  file-close
+
+  set alfalfa-food []
+  file-open "alfalfa_food.txt"
+  while [ not file-at-end? ]
+  [ set alfalfa-food sentence alfalfa-food (list file-read) ]
+  file-close
+
+  set hay-food []
+  file-open "hay_food.txt"
+  while [ not file-at-end? ]
+  [ set hay-food sentence hay-food (list file-read) ]
+  file-close
+
+  set soybean-cover []
+  file-open "soybean_cover.txt"
+  while [ not file-at-end? ]
+  [ set soybean-cover sentence soybean-cover (list file-read) ]
+  file-close
+
+  set soybean-food []
+  file-open "soybean_food.txt"
+  while [ not file-at-end? ]
+  [ set soybean-food sentence soybean-food (list file-read) ]
+  file-close
+
+  set grass-cover []
+  file-open "grass_cover.txt"
+  while [ not file-at-end? ]
+  [ set grass-cover sentence grass-cover (list file-read) ]
+  file-close
+
+  set grass-food []
+  file-open "grass_food.txt"
+  while [ not file-at-end? ]
+  [ set grass-food sentence grass-food (list file-read) ]
+  file-close
+
+  set swch-cover []
+  file-open "swch_cover.txt"
+  while [ not file-at-end? ]
+  [ set swch-cover sentence swch-cover (list file-read) ]
+  file-close
+
+  set swch-food []
+  file-open "swch_food.txt"
+  while [ not file-at-end? ]
+  [ set swch-food sentence swch-food (list file-read) ]
+  file-close
+
+  set swch-bio []
+  file-open "swch_biomass.txt"
+  while [ not file-at-end? ]
+  [ set swch-bio sentence swch-bio (list file-read) ]
+  file-close
+
+  set crp-cover []
+  file-open "crp_cover.txt"
+  while [ not file-at-end? ]
+  [ set crp-cover sentence crp-cover (list file-read) ]
+  file-close
+
+  set crp-food []
+  file-open "crp_food.txt"
+  while [ not file-at-end? ]
+  [ set crp-food sentence crp-food (list file-read) ]
+  file-close
+
+  set crp-bio []
+  file-open "crp_biomass.txt"
+  while [ not file-at-end? ]
+  [ set crp-bio sentence crp-bio (list file-read) ]
+  file-close
+
+end
+
+;;================================================================================
+;;================================SETUP PROCEDURES================================
+;;================================================================================
+to setup
+  reset-ticks
+  set day 1
+  set week 1
+  set year 0
+  set day-corn 0
+  set day-biomass 0
+
+  load-patch-data
+  ask patches [ set been-mowed? false ]
+  ask patches [ set been-visited? false ]
+  ask patches [ set bird-visit 0 ]
+  ask patches [ veg-properties ]
+
+  ask female-pheasants [ die ]
+  ask male-pheasants [ die ]
+  ask hunters [ die ]
+  ask tractors [ die ]
+  set roosters-hunted 0
+  set total-biomass 0
+  set total-corn 0
+  set female-tractor-deaths 0
+  set male-tractor-deaths 0
+  set energy-death 0
+  set natural-death 0
+
+
+  ;;SET SCENARIOS HERE!!! set any of these to true to use in scenario
+  ;these are timings
+  set hunt-base? true
+  set hunt-ideal? false
+  set late-summer? false
+  set late-fall? false
+  set early-spring? false
+  set late-spring? true
+  ;these are spatial
+  set hunt-radius? false
+  set hunt-strip? true
+  set base-harvest? true
+  set theory-harvest? false
+
+  ;this sets timing, they should all be false
+  set lek? false
+  set nesting? false
+  set incubate? false
+  set birth? false
+  set flock-by-sex? false
+
+  set time-h-base? false
+  set time-h-ideal? false
+  set time-t-summer? false
+  set time-t-fall? false
+  set time-t-early? false
+  set time-t-late? false
+
+  set counter 1
+  ;set carrying-capacity 1000
+  create-pheasants
+
+end
+
+;;================================CREATE PHEASANTS================================
+to create-pheasants
+  create-female-pheasants 20
+  [ ;set shape "bird side"
+    ;set color 33
+
+    setxy random-xcor random-ycor
+
+    set mom 0
+    set age 77 + random (730 - 77)
+    set energy 5 + random (11 - 5) ;;The weight of female pheasants given in
+    set territorial? false
+    set est-nest? false
+    ;set death-prob 0.021
+  ]
+
+  create-male-pheasants 20
+  [ ;set shape "bird side"
+    ;set color 13
+
+    setxy random-xcor random-ycor
+
+    set mom 0
+    set age 77 + random (730 - 77)
+    set energy 9 + random (13 - 9) ;; The weight of male pheasants given in
+    set desirability ( random 10 ) ;; Desirability is a random number between 1 and 10, with 1 being not desirable and 100 being most desirable
+    set territorial? false
+    ;set death-prob 0.021
+  ]
+end
+
+;;================================CREATE VEG PROPS================================
+to veg-properties
+  gis:apply-coverage field-dataset "LUSE" luse
+
+  set corn-patches patches with [ luse = "corn" ]
+  ask corn-patches
+  ;if luse = "corn"
+  [ set nest? true
+    set harvestable? true
+    set cover 0.08 ;initial value
+    set food 0.79 ;initial value
+    set biomass 5.098773 ;initial value
+  ]
+
+
+  set soybean-patches patches with [ luse = "soybean" ]
+  ask soybean-patches
+  ;if luse = "soybean"
+  [ set nest? false
+    set harvestable? false
+    set cover 0.060024 ;initial value
+    set food 0.174815 ;initial value
+  ]
+
+
+  set alfalfa-patches patches with [ luse = "alfalfa" ]
+  ask alfalfa-patches
+  ;if luse = "alfalfa"
+  [ set nest? true
+    set harvestable? false
+    set cover 0.009 ;initial value
+    set food 0.42244 ;initial value
+  ]
+
+
+  set hay-patches patches with [ luse = "hay" ]
+  ask hay-patches
+  ;if luse = "hay"
+  [ set nest? true
+    set harvestable? false
+    set food 9.11631 ;initial value
+    set cover 1.524 ;constant throughout simulation
+  ]
+
+
+  if luse = "barren"
+  [ set nest? false
+    set harvestable? false
+
+    set food 0 ;constant
+    set cover 0 ;constant
+  ]
+
+
+  set forest-patches patches with [ luse = "forest" ]
+  ask forest-patches
+  ;if luse = "decfrt"
+  [ set nest? false
+    set harvestable? false
+
+    set cover 4.572 ;constant
+    set food 0 ;constant
+  ]
+
+
+  if (luse = "developed") or (luse = "dev/lw") or (luse = "dev/op")
+  [ set nest? false
+    set harvestable? false
+
+    set food 0 ;constant
+    set cover 0 ;constant
+  ]
+
+
+  set grass-patches patches with [ luse = "grassland" or luse = "shrub"  or luse = "shrubland"]
+  ask grass-patches
+  ;if (luse = "grassland") or (luse = "shrub")
+  [ set nest? true
+    set harvestable? false
+    set cover 0.2 ;initial
+    set food 7.5918 ;initial
+  ]
+
+
+  if (luse = "herb wetland" or luse = "herb wet")
+  [ set nest? false
+    set harvestable? false
+
+    set food 0 ;constatnt
+    set cover 10668 ;constant
+  ]
+
+
+  if (luse = "woody wetland" or luse = "woody wet")
+  [ set nest? false
+    set harvestable? false
+
+    set food 0 ;constant
+    set cover 1.4 ;constant
+  ]
+
+
+  if luse = "water"
+  [ set nest? false
+    set harvestable? false
+
+    set food 0 ;constant
+    set cover 0 ;constant
+  ]
+
+  set crp-patches patches with [ luse = "crp food plot" or luse = "crp food plo" ]
+  ask crp-patches
+  ;if luse = "crp food"
+  [ set nest? true
+    set harvestable? true
+    set cover 0.3 ;initial
+    set food 0.860927 ;initial
+    set biomass 3.015726 ;initial
+  ]
+
+
+  set swch-patches patches with [ luse = "crp switchgrass" or luse = "CRP switchgrass" or luse = "crp switchgr" ]
+  ask swch-patches
+  ;if luse = "CRP switchgrass"
+  [ set nest? true
+    set harvestable? true
+    set cover 0.098 ;initial
+    set food 4.8 ;initial
+    set biomass 2.30054 ;initial
+  ]
+
+end
+
+to grow-land
+  ask alfalfa-patches [ grow-alfalfa ]
+  ask hay-patches [ grow-hay ]
+  ask soybean-patches [ grow-soybean ]
+  ask grass-patches [ grow-grass ]
+  ask corn-patches [ grow-corn ]
+  ask swch-patches [ grow-swch ]
+  ask crp-patches [ grow-crp ]
+
+;  ask corn-patches
+;  ;if luse = "corn"
+;  [ ;food
+;    if day <= 100
+;    [ set food (0.79 - (0.2 * bird-visit)) ]
+;    if (day > 100) and (day <= 220) and (been-mowed? = true)
+;    [ set food ((0.009 * ( 0.1379 * (((day - day-corn) + (random-float 2 - random-float 2)) - 100) ^ 2 - 1.2001 * (((day - day-corn) + (random-float 2 - random-float 2)) - 100) + 8.93)) + 0.73 - (0.2 * bird-visit)) ]
+;    if (day > 100) and (day <= 220) and (been-mowed? = false)
+;    [ set food ((0.009 * ( 0.1379 * ((day + (random-float 2 - random-float 2)) - 100) ^ 2 - 1.2001 * ((day + (random-float 2 - random-float 2)) - 100) + 8.93)) + 0.73 - (0.2 * bird-visit)) ]
+;
+;    if (day > 220) and (been-mowed? = true)
+;    [ set food (21.062 / (1 + 0.1 * exp( 0.1 * (((day - day-corn) + (random-float 2 - random-float 2)) - 240))) + 0.73 - (0.2 * bird-visit)) ]
+;    if (day > 220) and (been-mowed? = false)
+;    [ set food (21.062 / (1 + 0.1 * exp( 0.1 * ((day + (random-float 2 - random-float 2)) - 240))) + 0.73 - (0.2 * bird-visit)) ]
+;
+;    ;cover
+;    if (day <= 200) and (been-mowed? = true)
+;    [ set cover (5 / (1 + 500 * exp(-0.1 * (((day - day-corn) + (random-float 2 - random-float 2)) - 50)))) + 0.85 ]
+;    if (day <= 200) and (been-mowed? = false)
+;    [ set cover (5 / (1 + 500 * exp(-0.1 * ((day + (random-float 2 - random-float 2)) - 50)))) + 0.85 ]
+;
+;    if (day > 200) and (been-mowed? = true)
+;    [ set cover (4.8 / (1 + 0.1 * exp(0.1 * (((day - day-corn) + (random-float 2 - random-float 2)) - 200)))) + 0.85 ]
+;    if (day > 200) and (been-mowed? = false)
+;    [ set cover (4.8 / (1 + 0.1 * exp(0.1 * ((day + (random-float 2 - random-float 2)) - 200)))) + 0.85 ]
+;
+;    ;biomass
+;    if (day <= 180) and (been-mowed? = true)
+;    [ set biomass exp(0.009 * (((day - day-corn) + (random-float 2 - random-float 2)) + 180)) ]
+;    if (day <= 180) and (been-mowed? = false)
+;    [ set biomass exp(0.009 * ((day + (random-float 2 - random-float 2)) + 180)) ]
+;
+;
+;    if (day > 180) and (day <= 220)
+;    [ set biomass 25.9 ]
+;    if (day > 220) and (been-mowed? = true)
+;    [ set biomass (exp(-0.012 * (((day - day-corn) + (random-float 2 - random-float 2)) - 480))) + 1.4 ]
+;    if (day > 220) and (been-mowed? = false)
+;    [ set biomass (exp(-0.012 * ((day + (random-float 2 - random-float 2)) - 480))) + 1.4 ]
+;  ]
+
+end
+
+to grow-alfalfa
+  let x (day - 1)
+
+  set cover item day alfalfa-cover
+  set food item day alfalfa-food set food (food - (0.2 * bird-visit))
+end
+
+to grow-hay
+  let x (day - 1)
+
+  set food item day hay-food set food (food - (0.2 * bird-visit))
+end
+
+to grow-soybean
+  let x (day - 1)
+
+  set cover item day soybean-cover
+  set food item day soybean-food set food (food - (0.2 * bird-visit))
+end
+
+to grow-grass
+  let x (day - 1)
+
+  set cover item day grass-cover
+  set food item day grass-food set food (food - (0.2 * bird-visit))
+end
+
+to grow-corn
+  let x (day - day-corn)
+
+  set cover item day corn-cover
+  set food item day corn-food set food (food - (0.2 * bird-visit))
+  set biomass item day corn-bio
+end
+
+to grow-swch
+  let x (day - day-biomass)
+
+  set cover item day swch-cover
+  set food item day swch-food set food (food - (0.2 * bird-visit))
+  set biomass item day swch-bio
+end
+
+to grow-crp
+  let x (day - day-biomass)
+
+  set cover item day crp-cover
+  set food item day crp-food set food (food - (0.2 * bird-visit))
+  set biomass item day crp-bio
+end
+
+;;================================================================================
+;;==================================GO PROCEDURES=================================
+;;================================================================================
+to go
+  tick
+
+  ;ask patches [ grow-land ] ;when this is turned on the pheasants don't move around for some reason...not sure yet?
+  ask alfalfa-patches [ grow-alfalfa ]
+  ask hay-patches [ grow-hay ]
+  ask soybean-patches [ grow-soybean ]
+  ask grass-patches [ grow-grass ]
+  ask corn-patches [ grow-corn ]
+  ask swch-patches [ grow-swch ]
+  ask crp-patches [ grow-crp ]
+
+  ;;timing of all procedures happen here
+;  if (week = week-of-harvest and day = day-of-harvest)
+;  [ ;print "harvest worked!!!"
+;      bio-tractor-create
+;    ask tractors [ base-harvest ]]
+
+  if (week = 9 and day = 4) [ set lek? true ]
+  if (week = 15 and day = 1) [ set lek? false ]
+  if lek? = true
+  [ ask male-pheasants [ if (random-float 1 < 0.5) [ lek ]]
+    ask female-pheasants [ forage ]]
+
+  if (week = 11 and day = 3) and (early-spring? = true) [ set time-t-early? true ]
+  if (week = 16 and day = 1) and (early-spring? = true) [ set time-t-early? false ]
+  if (time-t-early? = true) and (base-harvest? = true)
+  [ bio-tractor-create
+    ask tractors [ base-harvest ]]
+  if (time-t-early? = true) and (theory-harvest? = true)
+  [ bio-tractor-create
+    ask tractors [ theory-harvest ]]
+
+  if (week = 15 and day = 1) [ set nesting? true ]
+  if (week = 20 and day = 5) [ set nesting? false ]
+  if nesting? = true
+  [ ask female-pheasants [ if (random-float 1 < 0.5) [ nest ]]
+    ask male-pheasants [ forage ]]
+
+  if (week = 18 and day = 2) and (late-spring? = true) [ set time-t-late? true ]
+  if (week = 20 and day = 7) and (late-spring? = true) [ set time-t-late? false ]
+  if (time-t-late? = true) and (base-harvest? = true)
+  [ bio-tractor-create
+    ask tractors [ base-harvest ]]
+  if (time-t-late? = true) and (theory-harvest? = true)
+  [ bio-tractor-create
+    ask tractors [ theory-harvest ]]
+
+  if (week = 20 and day = 5) [ set incubate? true ]
+  if (week = 24 and day = 5) [ set incubate? false ]
+  if incubate? = true
+  [ ask female-pheasants [ incubate ]
+    ask male-pheasants [ forage ]]
+
+  if (week = 24 and day = 5) [ set birth? true ]
+  if (week = 25 and day = 7) [ set birth? false ]
+  if birth? = true
+  [ ask female-pheasants [ if (random-float 1 < 0.5) [ birth ]]
+    ask male-pheasants [ forage ]]
+
+  if (week = 34 and day = 1) and (hunt-ideal? = true) [ set time-h-ideal? true ]
+  if (week = 39 and day = 7) and (hunt-ideal? = true) [ set time-h-ideal? false ]
+  if (time-h-ideal? = true) and (hunt-radius? = true)
+  [ hunters-create
+    ask hunters [ hunt-radius ]
+    ask hunters [ die ]]
+  if (time-h-ideal? = true) and (hunt-strip? = true)
+  [ hunters-create
+    ask hunters [ hunt-strip ]
+    ask hunters [ die ]]
+
+  if (week = 35 and day = 7) and (late-summer? = true) [ set time-t-summer? true ]
+  if (week = 40 and day = 5) and (late-summer? = true) [ set time-t-summer? false ]
+  if (time-t-summer? = true) and (base-harvest? = true)
+  [ bio-tractor-create
+    ask tractors [ base-harvest ]]
+  if (time-t-summer? = true) and (theory-harvest? = true)
+  [ bio-tractor-create
+    ask tractors [ theory-harvest ]]
+
+  if (week = 42 and day = 1)
+  [ corn-tractor-create
+    ask tractors [ corn-harvest ]]
+    ;ask tractors [ die ]]
+
+  if (week = 44 and day = 3) and (hunt-base? = true) [ set time-h-base? true ]
+  if (week = 5 and day = 3) and (hunt-base? = true) [ set time-h-base? false ]
+  if (time-h-base? = true) and (hunt-radius? = true)
+  [ hunters-create
+    ask hunters [ hunt-radius ]
+    ask hunters [ die ]]
+  if (time-h-base? = true) and (hunt-strip? = true)
+  [ hunters-create
+    ask hunters [ hunt-strip ]
+    ask hunters [ die ]]
+
+  if (week = 45 and day = 6) and (late-fall? = true) [ set time-t-fall? true ]
+  if (week = 2 and day = 4) and (late-fall? = true) [ set time-t-fall? false ]
+  if (time-t-fall? = true) and (base-harvest? = true)
+  [ bio-tractor-create
+    ask tractors [ base-harvest ]]
+  if (time-t-fall? = true) and (theory-harvest? = true)
+  [ bio-tractor-create
+    ask tractors [ theory-harvest ]]
+
+  if (week = 48 and day = 6) [ set flock-by-sex? true ]
+  if (week = 9 and day = 4) [ set flock-by-sex? false ]
+  if flock-by-sex? = true
+  [ ask female-pheasants [ flock-by-sex ]
+    ask male-pheasants [ flock-by-sex ]
+    ask female-pheasants [ forage ]
+    ask male-pheasants [ forage ]]
+
+
+  ask female-pheasants [ check-death ]
+  ask male-pheasants [ check-death ]
+
+  ;export data -- 1st and 15th day of each month for a total of 24 data points/yr
+  if ((week = 1 and day = 1) or (week = 3 and day = 1) or (week = 5 and day = 4) or (week = 7 and day = 4)
+    or (week = 9 and day = 4) or (week = 11 and day = 4) or (week = 13 and day = 7) or (week = 15 and day = 7)
+    or (week = 18 and day = 2) or (week = 20 and day = 2) or (week = 22 and day = 5) or (week = 24 and day = 5)
+    or (week = 26 and day = 7) or (week = 28 and day = 7) or (week = 31 and day = 3) or (week = 33 and day = 3)
+    or (week = 35 and day = 6) or (week = 37 and day = 6) or (week = 40 and day = 1) or (week = 42 and day = 1)
+    or (week = 44 and day = 4) or (week = 46 and day = 4) or (week = 48 and day = 6) or (week = 50 and day = 6))
+  [ export-results ]
+
+  set day (day + 1)
+  ask male-pheasants [ set age (age + 1) ]
+  ask female-pheasants [ set age (age + 1) ]
+
+  if day > 7
+  [ set day 1
+    set week (week + 1) ]
+
+  if week > 52
+  [ set day 1
+    set day-corn 0
+    set day-biomass 0
+    ask patches [ set been-mowed? false ]
+    ask patches [ set been-visited? false ]
+    ask patches [ set bird-visit 0 ]
+    set week 1
+    set year (year + 1) ]
+
+
+  if ((count female-pheasants) + (count male-pheasants) = 0 ) or (year = 10) [ stop ]
+end
+
+;;================================================================================
+;;===============================SUBMODEL PROCEDURES==============================
+;;================================================================================
+
+;;==================================EXPORT-RESULTS================================
+to export-results
+  file-open (word "grass" counter ".csv")
+  ;file-open (word "ModelResults/tes.csv")
+
+  let total-female (count female-pheasants)
+  let total-male (count male-pheasants)
+
+  file-print (word year "," week "," day "," total-female "," total-male ","
+  roosters-hunted "," total-biomass "," total-corn "," female-tractor-deaths "," male-tractor-deaths ","
+  energy-death "," natural-death "," late-summer? "," late-fall? "," early-spring? "," late-spring? ","
+  hunt-radius? "," hunt-strip? "," base-harvest? "," theory-harvest?)
+
+  file-close
+
+;  ;file-open (word "ModelResults/spatial_test_male" counter ".csv")
+;  let male-spatial gis:turtle-dataset male-pheasants
+;  gis:store-dataset male-spatial (word "ModelResults/spatial_test_male" counter)
+;  ;file-close
+
+;  ;file-open (word "ModelResults/spatial_test_female" counter ".csv")
+;  let female-spatial gis:turtle-dataset female-pheasants
+;  gis:store-dataset female-spatial (word "ModelResults/spatial_test_female" counter)
+;  ;file-close
+
+  set counter (counter + 1)
+end
+
+;to build-export-lists
+;
+;end
+
+;;======================================FORAGE====================================
+to forage
+  set food-trials 0
+
+  ifelse ( age <= 77 )
+  [ if food > 0 and food-trials < 2
+    [ set energy (energy + (0.5 * food))
+      ;ask patch-here [ set food (0.8 * food) ]
+      ask patch-here [ set bird-visit (bird-visit + 1) ]
+      ifelse ((mom != 0) and ([distance [mom] of myself] of patch-ahead 1 > 2))
+        [ face mom
+          forward 1
+          set energy (energy - 0.01)
+        ]
+        [ set heading random 360
+          forward random (energy - 5)
+          set energy (energy - 0.01)
+        ]
+      ]
+    if food = 0 and food-trials < 2
+    [ set energy (energy - 0.01)
+      ifelse ((mom != 0 ) and ([distance [mom] of myself] of patch-ahead 1 > 2))
+      [ face mom
+        forward 1
+        set energy (energy - 0.01)
+      ]
+      [ set heading random 360
+        forward random (energy - 5)
+        set energy (energy - 0.01)
+      ]
+    ]
+  ]
+  [ if food > 0 and food-trials < 2
+    [ set energy (energy + (0.5 * food))
+      ;ask patch-here [ set food (0.8 * food) ]
+      ask patch-here [ set bird-visit (bird-visit + 1) ]
+      set heading random 360
+      forward random (energy - 7)
+      set energy (energy - 0.01)
+    ]
+    if food = 0 and food-trials < 2
+    [ set energy (energy - 0.01)
+      set heading random 360
+      forward random (energy - 7)
+      set energy (energy - 0.01)
+    ]
+  ]
+
+  set food-trials (food-trials + 1)
+
+  if energy = 0
+  [ set energy-death (energy-death + 1)
+ death ]
+end
+
+;;========================================LEK=====================================
+to lek
+
+  let num-trials-allowed 4
+  ask male-pheasants with [ desirability > 0 ]
+  [ set harem-radius (desirability * 10) ]
+
+  set lek-trials 0
+
+   if (any? patches in-radius harem-radius with [ owner = nobody and nest? = true ] and (lek-trials < num-trials-allowed) and (territorial? = false))
+    [ move-to one-of patches in-radius harem-radius with [ owner = nobody and nest? = true ]
+      set lek-trials (lek-trials + 1)
+      set energy (energy - 0.01)
+    ]
+
+  ifelse (lek-trials <= num-trials-allowed) and (count patches in-radius harem-radius with [ nest? = true ] > 1) and (territorial? = false)
+  [ set territorial? true
+    ask patches in-radius harem-radius with [ nest? = true ][ set owner myself ]
+    ask patches with [ owner = myself ][ set patch-harem-num [who] of myself ]
+    set terr-size (count patches with [ owner = myself ])
+    ask female-pheasants in-radius harem-radius with [ territorial? = false ]
+    [ move-to myself
+        set energy (energy - 0.01)
+        set territorial? true
+        set terr-size ([terr-size] of myself)
+        set harem-num ([who] of myself)
+    ]
+  ]
+  [ set territorial? false
+  ]
+
+  set territorial? false
+
+  if energy = 0
+  [ set energy-death (energy-death + 1)
+ death ]
+end
+
+;;=======================================NEST=====================================
+to nest
+  while [ est-nest? = false and territorial? = true and energy > 2]
+  [ ifelse ([ nest? ] of patch-here = true)
+    [ set est-nest? true
+    set nest-site patch-here
+    set eggs 7 + random (8) ]
+    ;set eggs 7 + random (15 - 7 + 1) ]
+    [ set est-nest? false
+    left random 360
+    forward 1
+    set energy (energy - 0.01) ]
+  ]
+
+  if energy = 0
+  [ set energy-death (energy-death + 1)
+ death ]
+end
+
+
+;;=====================================INCUBATE===================================
+to incubate
+  ask female-pheasants with [ est-nest? = true ]
+  [ left random 360
+    forward random 5
+    set energy (energy + food)
+    move-to nest-site
+    set energy (energy - 0.01)
+  ]
+
+  if energy = 0
+  [ set energy-death (energy-death + 1)
+ death ]
+end
+
+;;=======================================BIRTH====================================
+to birth
+  ask female-pheasants with [ est-nest? = true ]
+  [ while [ eggs > 0 ]
+    [ ifelse (random-float 1 < 0.5)
+      [ hatch-female-pheasants 1
+        [ ;set shape "bird side"
+          ;set color 33
+          set age 1
+          set mom myself
+          ;set death-prob 0.5
+          set energy 2 ;; baby energy
+          set territorial? false
+          set est-nest? false ] ;print "female born"
+      ]
+
+      [ hatch-male-pheasants 1
+        [ ;set shape "bird side"
+          ;set color 13
+          set age 1
+          set mom myself
+          ;set death-prob 0.5
+          set energy 2 ;; baby energy
+          set territorial? false
+          set desirability ( random 10 ) ] ;print "male born"
+      ]
+      set eggs ( eggs - 1 )
+    ]
+  ]
+
+  set territorial? false
+  set est-nest? false
+
+  if energy = 0
+  [ set energy-death (energy-death + 1)
+ death ]
+end
+
+;;====================================CHECK DEATH=================================
+to check-death
+  if (age > 77) and (age < 730) [ set death-prob 0.021 ]
+  if (age <= 77) and (mom != 0) [ set death-prob 0.079 ]
+  if (age <= 77) and (mom = 0) [ set death-prob 0.78 ]
+  if (age >= 730) [ set death-prob 0.975 ]
+
+  if (random-float 1 < total-prob ( death-prob) (cover-val ) )
+  [ set natural-death (natural-death + 1)
+  death ]
+end
+
+to-report total-prob [ prob-of-death val-of-cover ]
+  if (val-of-cover = 0)
+  [ report ( prob-of-death ) ]
+
+  ifelse ( prob-of-death <= val-of-cover ) and ( val-of-cover < 1 )
+  [ report ( prob-of-death * val-of-cover ) ]
+  [ report ( prob-of-death / val-of-cover ) ]
+;  if (prob-of-death = 0.0021)
+;  [ report ( 1 / ( 1 + exp(0.1 * val-of-cover)) - 0.3 ) ]
+;  if (prob-of-death = 0.05)
+;  [ report ( 1 / ( 1 + exp(2 * val-of-cover)) ) ]
+;  if (prob-of-death = 0.078)
+;  [ report ( 1 / ( 1 + exp(2.2 * val-of-cover)) + 0.2 ) ]
+;  if (prob-of-death = 0.0975)
+;  [ report ( 1 / ( 1 + exp(val-of-cover)) + 0.4 ) ]
+
+end
+
+to-report cover-val
+  report [ cover ] of patch-here
+end
+
+;;=======================================DEATH====================================
+to death
+  ask patches with [ (owner = myself) ][ set owner nobody ]
+  ask female-pheasants with [ mom = myself ][ set mom 0 ]
+  ask male-pheasants with [ mom = myself ][ set mom 0 ]
+  die
+end
+
+;;===================================SPROUT-HUNTERS===============================
+to hunters-create
+  let num random 5
+
+  ask n-of num patches with [ luse != "water" ][ sprout-hunters 1
+    [ ;set shape "person farmer"
+      ;set color 33
+      set roosters 0
+      set hunt-distance 2
+      set accuracy random-float 1 ]]
+end
+
+;;===================================HUNT-RADIUS==================================
+to hunt-radius
+
+  set hunt-trials 0
+
+  if (roosters < 3) and (hunt-trials < 12)
+  [ ifelse (any? male-pheasants in-radius hunt-distance)
+    [ set target [ who ] of one-of male-pheasants in-radius hunt-distance
+      if (random-float 1 < accuracy)
+      [ face male-pheasant target
+        ask male-pheasant target [ die ]
+        set roosters (roosters + 1)
+        forward 1 ]
+      set hunt-trials hunt-trials + 1 ]
+    [ set hunt-trials hunt-trials + 1
+      left random 360
+      forward 1
+    ]
+  ]
+
+  set roosters-hunted ( roosters-hunted + roosters )
+  set roosters 0
+
+end
+
+;;===================================HUNT-STRIP===================================
+to hunt-strip
+
+  set hunt-trials 0
+
+  if (roosters < 3) and (hunt-trials < 12)
+  [ ifelse (any? male-pheasants in-cone 2 180)
+    [ set target [ who ] of one-of male-pheasants in-cone 2 180
+      if (random-float 1 < accuracy)
+      [ face male-pheasant target
+        ask male-pheasant target [ die ]
+        set roosters (roosters + 1)
+        forward 1 ]
+      set hunt-trials hunt-trials + 1 ]
+    [ set hunt-trials hunt-trials + 1
+      left random 360
+      forward 1
+    ]
+  ]
+
+  set roosters-hunted ( roosters-hunted + roosters )
+  set roosters 0
+
+end
+;;===================================CORN-HARVEST=================================
+to corn-tractor-create
+  ask n-of 1 patches with [ luse = "corn" ][ sprout-tractors 1
+    [ ;set shape "bulldozer top"
+      ;set color 45
+      set heading 0 ]]
+end
+
+to corn-harvest
+
+  if not not-field? ( 90 ) and not mown? (-90) and not-field? ( -135 ) [ lt 90 ]
+  while [not-field? 0] [rt 90]
+  ;ask patch-here [ set pcolor blue ]
+  set corn-yield ( corn-yield + biomass )
+  ask patch-here [ set been-mowed? true ]
+  set day-corn day
+  set been-mowed? true
+  fd 1
+  if any? female-pheasants-on patch-here [
+    set femaleT-deaths (femaleT-deaths + count female-pheasants-here)
+    ask female-pheasants-here [death] ]
+  if any? male-pheasants-on patch-here [
+    set maleT-deaths (maleT-deaths + count male-pheasants-here)
+    ask male-pheasants-here [death] ]
+  ask female-pheasants in-radius 2 [ left random 360 fd 1 ]
+  ask male-pheasants in-radius 2 [ left random 360 fd 1 ]
+  ;ask patch-here [ set pcolor blue ]
+  set corn-yield ( corn-yield + biomass )
+  ask patch-here [ set been-mowed? true ]
+
+  if (mown? 0 and mown? 180) [ rt 90 fd 1
+    set corn-yield ( corn-yield + biomass )
+    set day-corn day
+    ;set biomass 0
+    ask patch-here [ set been-mowed? true ]
+    if any? female-pheasants-on patch-here [
+      set femaleT-deaths (femaleT-deaths + count female-pheasants-here)
+      ask female-pheasants-here [death]]
+    if any? male-pheasants-on patch-here [
+      set maleT-deaths (maleT-deaths + count male-pheasants-here)
+      ask male-pheasants-here [death] ]
+    ask female-pheasants in-radius 2 [ left random 360 fd 1 ]
+    ask male-pheasants in-radius 2 [ left random 360 fd 1 ]
+    ;ask patch-here [set pcolor blue]]
+  ]
+
+  ;if (mown? 0 and mown? 45 and mown? 90 and mown? 135 and mown? 180 and mown? 225 and mown? 270 and mown? 315)
+  if random-float 1 < 0.5
+  [ set total-corn ( total-corn + corn-yield )
+    set female-tractor-deaths ( female-tractor-deaths + femaleT-deaths )
+    set male-tractor-deaths ( male-tractor-deaths + maleT-deaths )]
+
+end
+
+;;===================================BASE-HARVEST=================================
+to bio-tractor-create
+
+  ask n-of 2 patches with [ luse = "crp switchgr" or luse = "crp food plo" or luse = "CRP switchgrass"
+ or luse = "crp switchgrass" or luse = "crp food plot"][ sprout-tractors 1
+    [ ;set shape "bulldozer top"
+      ;set color 45
+      set heading 0 ]]
+
+;  ask one-of patches with [ luse = "crp" ][ sprout-tractors 1
+;    [ set shape "bulldozer top"
+;      set color 45
+;      set heading 0 ]]
+
+end
+
+to base-harvest
+
+  if not not-field? ( 90 ) and not mown? (-90) and not-field? ( -135 ) [ lt 90 ]
+  while [not-field? 0] [rt 90]
+  set bio-yield ( bio-yield + biomass )
+  ask patch-here [ set been-mowed? true ]
+  set day-biomass day
+  set been-mowed? true
+  fd 1
+  if any? female-pheasants-on patch-here [
+    set femaleT-deaths (femaleT-deaths + count female-pheasants-here)
+    ask female-pheasants-here [death] ]
+  if any? male-pheasants-on patch-here [
+    set maleT-deaths (maleT-deaths + count male-pheasants-here)
+    ask male-pheasants-here [death] ]
+  ask female-pheasants in-radius 2 [ left random 360 fd 1 ]
+  ask male-pheasants in-radius 2 [ left random 360 fd 1 ]
+
+  set bio-yield ( bio-yield + biomass )
+  ask patch-here [ set been-mowed? true ]
+
+  if (mown? 0 and mown? 180) [ rt 90 fd 1
+    set bio-yield ( bio-yield + biomass )
+    set day-biomass day
+    ask patch-here [ set been-mowed? true ]
+    if any? female-pheasants-on patch-here [
+      set femaleT-deaths (femaleT-deaths + count female-pheasants-here)
+      ask female-pheasants-here [death]]
+    if any? male-pheasants-on patch-here [
+      set maleT-deaths (maleT-deaths + count male-pheasants-here)
+      ask male-pheasants-here [death] ]
+    ask female-pheasants in-radius 2 [ left random 360 fd 1 ]
+    ask male-pheasants in-radius 2 [ left random 360 fd 1 ]
+  ]
+
+  ;if (mown? 0 and mown? 45 and mown? 90 and mown? 135 and mown? 180 and mown? 225 and mown? 270 and mown? 315)
+  if random-float 1 < 0.5
+  [ set total-biomass ( total-biomass + bio-yield )
+    set female-tractor-deaths ( female-tractor-deaths + femaleT-deaths )
+    set male-tractor-deaths ( male-tractor-deaths + maleT-deaths )]
+
+end
+
+
+;;==================================THEORY-HARVEST================================
+to theory-harvest
+;    ask n-of 2 patches with [ luse = "switchgrass" or luse = "crp food" ][ sprout-tractors 1
+;    [ ;set shape "bulldozer top"
+;      ;set color 45
+;      set heading 0 ]]
+
+  if (not visited? 180 and not visited? 270 and not visited? 90 and not visited? 0)
+  [ rt 90 fd 1
+    ifelse (harvestable? = true)[
+      ask patch-here [ set been-visited? true set been-mowed? true ]
+      set bio-yield ( bio-yield + biomass )
+      set day-biomass day
+      if any? female-pheasants-on patch-here [
+        set femaleT-deaths (femaleT-deaths + count female-pheasants-here)
+        ask female-pheasants-here [death]]
+      if any? male-pheasants-on patch-here [
+        set maleT-deaths (maleT-deaths + count male-pheasants-here)
+        ask male-pheasants-here [death]]
+      ask female-pheasants in-radius 2 [ left random 360 fd 1 ]
+      ask male-pheasants in-radius 2 [ left random 360 fd 1 ]
+    ]
+    [ ask patch-here [ set been-visited? true ]
+      if any? female-pheasants-on patch-here [
+        set femaleT-deaths (femaleT-deaths + count female-pheasants-here)
+        ask female-pheasants-here [death]]
+      if any? male-pheasants-on patch-here [
+        set maleT-deaths (maleT-deaths + count male-pheasants-here)
+        ask male-pheasants-here [death]]
+      ask female-pheasants in-radius 2 [ left random 360 fd 1 ]
+      ask male-pheasants in-radius 2 [ left random 360 fd 1 ]
+    ]
+  ]
+
+  if (visited? 180 and not visited? 90)
+  [ rt 90 fd 1
+    ifelse (harvestable? = true) [
+      ask patch-here [ set been-visited? true set been-mowed? true ]
+      set bio-yield ( bio-yield + biomass )
+      set day-biomass day
+      if any? female-pheasants-on patch-here [
+        set femaleT-deaths (femaleT-deaths + count female-pheasants-here)
+        ask female-pheasants-here [death]]
+      if any? male-pheasants-on patch-here [
+        set maleT-deaths (maleT-deaths + count male-pheasants-here)
+        ask male-pheasants-here [death]]
+      ask female-pheasants in-radius 2 [ left random 360 fd 1 ]
+      ask male-pheasants in-radius 2 [ left random 360 fd 1 ]
+    ]
+    [ ask patch-here [ set been-visited? true ]
+      if any? female-pheasants-on patch-here [
+        set femaleT-deaths (femaleT-deaths + count female-pheasants-here)
+        ask female-pheasants-here [death]]
+      if any? male-pheasants-on patch-here [
+        set maleT-deaths (maleT-deaths + count male-pheasants-here)
+        ask male-pheasants-here [death]]
+      ask female-pheasants in-radius 2 [ left random 360 fd 1 ]
+      ask male-pheasants in-radius 2 [ left random 360 fd 1 ]
+    ]
+  ]
+
+  if (visited? 180 and not visited? 270 and visited? 90 and not visited? 0)
+  [ fd 1
+    ifelse (harvestable? = true) [
+      ask patch-here [ set been-visited? true set been-mowed? true]
+      set bio-yield ( bio-yield + biomass )
+      set day-biomass day
+      if any? female-pheasants-on patch-here [
+        set femaleT-deaths (femaleT-deaths + count female-pheasants-here)
+        ask female-pheasants-here [death]]
+      if any? male-pheasants-on patch-here [
+        set maleT-deaths (maleT-deaths + count male-pheasants-here)
+        ask male-pheasants-here [death]]
+      ask female-pheasants in-radius 2 [ left random 360 fd 1 ]
+      ask male-pheasants in-radius 2 [ left random 360 fd 1]
+    ]
+    [ ask patch-here [ set been-visited? true ]
+      if any? female-pheasants-on patch-here [
+        set femaleT-deaths (femaleT-deaths + count female-pheasants-here)
+        ask female-pheasants-here [death]]
+      if any? male-pheasants-on patch-here [
+        set maleT-deaths (maleT-deaths + count male-pheasants-here)
+        ask male-pheasants-here [death]]
+      ask female-pheasants in-radius 2 [ left random 360 fd 1 ]
+      ask male-pheasants in-radius 2 [ left random 360 fd 1 ]
+    ]
+  ]
+
+  if (mown? 0 and mown? 45 and mown? 90 and mown? 135 and mown? 180 and mown? 225 and mown? 270 and mown? 315)
+  [ set total-biomass ( total-biomass + bio-yield )
+    set female-tractor-deaths ( female-tractor-deaths + femaleT-deaths )
+    set male-tractor-deaths ( male-tractor-deaths + maleT-deaths )]
+end
+
+to-report not-field? [ angle ]
+  report false = [ harvestable? ] of patch-right-and-ahead angle 1
+end
+
+to-report mown? [ angle ]
+  report true = [ been-mowed? ] of patch-right-and-ahead angle 1
+end
+
+to-report visited? [ angle ]
+  report true = [ been-visited? ] of patch-right-and-ahead angle 1
+end
+;;===================================FLOCK BY SEX=================================
+to flock-by-sex
+
+  if (breed = female-pheasants)
+  [ set femaleflocks other female-pheasants in-radius 5 ;
+    if any? femaleflocks
+    [ set nearest-female min-one-of femaleflocks [ distance myself ]
+      ifelse distance nearest-female < 1 ;
+      [ separate-female ]
+      [ align-female
+        cohere-female ]]
+  ]
+
+    if (breed = male-pheasants)
+  [ set maleflocks other male-pheasants in-radius 5 ;
+    if any? maleflocks
+    [ set nearest-male min-one-of maleflocks [ distance myself ]
+      ifelse distance nearest-male < 1 ;
+      [ separate-male ]
+      [ align-male
+        cohere-male ]]
+  ]
+end
+
+to separate-female
+  turn-away ([heading] of nearest-female) 1.5 ; max-separate-turn = 1.5 degrees
+end
+
+to separate-male
+  turn-away ([heading] of nearest-male) 1.5 ; max-separate-turn = 1.5 degrees
+end
+
+to align-female
+  turn-towards average-femaleflock-heading 5 ; max align turn = 5 degrees
+end
+
+to align-male
+  turn-towards average-maleflock-heading 5 ; max align turn = 5 degrees
+end
+
+to-report average-femaleflock-heading
+  let x-component sum[dx] of femaleflocks
+  let y-component sum[dy] of femaleflocks
+  ifelse x-component = 0 and y-component = 0
+  [ report heading ]
+  [ report atan x-component y-component ]
+end
+
+to-report average-maleflock-heading
+  let x-component sum[dx] of maleflocks
+  let y-component sum[dy] of maleflocks
+  ifelse x-component = 0 and y-component = 0
+  [ report heading ]
+  [ report atan x-component y-component ]
+end
+
+to cohere-female
+  turn-towards average-heading-towards-femaleflock 3 ; max-cohere turn = 3 degrees
+end
+
+to cohere-male
+  turn-towards average-heading-towards-maleflock 3 ; max-cohere turn = 3 degrees
+end
+
+to-report average-heading-towards-femaleflock
+  let x-component mean [sin (towards myself + 180)] of femaleflocks
+  let y-component mean [cos (towards myself + 180)] of femaleflocks
+  ifelse x-component = 0 and y-component = 0
+  [ report heading ]
+  [ report atan x-component y-component ]
+end
+
+to-report average-heading-towards-maleflock
+  let x-component mean [sin (towards myself + 180)] of maleflocks
+  let y-component mean [cos (towards myself + 180)] of maleflocks
+  ifelse x-component = 0 and y-component = 0
+  [ report heading ]
+  [ report atan x-component y-component ]
+end
+
+to turn-towards [ new-heading max-turn ]
+  turn-at-most (subtract-headings new-heading heading) max-turn
+end
+
+to turn-away [ new-heading max-turn ]
+  turn-at-most (subtract-headings heading new-heading) max-turn
+end
+
+to turn-at-most [ turn max-turn]
+  ifelse abs turn > max-turn
+  [ifelse turn > 0
+    [ rt max-turn ]
+    [ lt max-turn ] ]
+  [ rt turn ]
+end
